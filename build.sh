@@ -11,7 +11,7 @@ set -e
 #   ./build.sh osrs_inferno --cpu     # OSRS visual policy viewer -> ./osrs_inferno
 #   ./build.sh nethack --cpu          # NetHack TTY demo (ocean/nethack/nethack.c)
 #   ./build.sh breakout myplay --cpu # Play -> ./myplay
-#   ./build.sh breakout --debug      # Debug (-O0 -g; sanitizers on --cpu)
+#   ./build.sh breakout --debug      # Debug (-O0 -g -G; sanitizers on --cpu)
 #   ./build.sh breakout --web        # Emscripten web build
 #                                    # packs website 1M-cap policy + *_web.ini
 #                                    # copy build/web/ENV/* to ../docker/puffer.ai/docs/assets/ENV/
@@ -198,6 +198,27 @@ elif [ "$ENV" = "nethack" ]; then
                -I./$NLE_DIR/build/_deps/deboost_context-src/include)
     EXTRA_LDFLAGS+=(-L"$NETHACK_LIB_DIR" -lnethack
                     -Xlinker -rpath -Xlinker "$NETHACK_LIB_DIR" -ldl)
+elif [ "$ENV" = "rcssemptynet_old" ]; then
+    SRC_DIR="ocean/$ENV"
+    INCLUDES+=(
+        -I/home/babaeti2/rcssserver_v3
+        -I/home/babaeti2/rcssserver_v3/src
+        -I/home/babaeti2/rcssserver_v3/rcss
+        -I/home/babaeti2/PufferLib/ocean/rcsscommon
+    )
+    # -Xlinker works for both clang (--cpu) and nvcc (native).
+    EXTRA_LDFLAGS+=(
+        -L/home/babaeti2/rcssserver_v3/build/src
+        -Xlinker --no-as-needed
+        -lmyrcssserver
+        -Xlinker -rpath
+        -Xlinker /home/babaeti2/rcssserver_v3/build/src
+    )
+elif [ "$ENV" = "rcssemptynet" ] || [ "$ENV" = "rcssfull" ]; then
+    SRC_DIR="ocean/$ENV"
+    INCLUDES+=(
+        -I/home/babaeti2/PufferLib/ocean/rcsscommon
+    )
 elif [ -d "ocean/$ENV" ]; then
     SRC_DIR="ocean/$ENV"
 else
@@ -232,7 +253,7 @@ else
 fi
 if [ -n "$DEBUG" ] || [ "$MODE" = "local" ]; then
     CLANG_OPT=(-g -O0 "${CLANG_WARN[@]}" "${SANITIZE_FLAGS[@]}" "${SIMD_FLAGS[@]}")
-    NVCC_OPT="-O0 -g"
+    NVCC_OPT="-O0 -g -G"
     LINK_OPT="-g"
 else
 # No -DNDEBUG: keep assert() active (train/sweep fail-fast with messages).

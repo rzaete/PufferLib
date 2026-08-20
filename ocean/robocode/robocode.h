@@ -152,10 +152,8 @@ struct Env {
 
     // Selfplay-pool tagging. tag = 0 means pure selfplay (both slots = primary
     // policy). tag > 0 means historical: slot 0 = primary, slot 1 = frozen
-    // historical opponent. boundary_reached is set on game-end so the trainer
-    // can swap frozen banks only between games.
+    // historical opponent. 
     int tag;
-    int boundary_reached;
 
     unsigned int rng;
 };
@@ -610,7 +608,6 @@ void compute_observations(Robocode* env){
 }
 void puf_reset(Robocode* env) {
     env->tick = 0;
-    // boundary_reached is owned by selfplay alignment; do not clear it here.
     int total_robots = env->num_agents + env->num_bots;
     memset(env->bullets, 0, NUM_BULLETS * total_robots * sizeof(Bullet));
     // One DR draw per episode shared by all agents so selfplay slots stay fair
@@ -707,9 +704,6 @@ static inline void end_episode(Robocode* env, int outcome) {
     env->log.perf += s0_score * env->num_agents;
     env->log.cl_perf += s0_score * (1.0f - noise) * env->num_agents;
     if (outcome == 0) env->log.draw_rate += env->num_agents;
-    if (env->tag > 0) {
-        env->boundary_reached = 1;
-    }
     // Snapshot pre-decay noise for metrics (what the agent actually faced).
     for (int a = 0; a < env->num_agents; a++) {
         env->logs[a].bot_cl_noise = (env->num_bots > 0 && env->num_agents == 1)

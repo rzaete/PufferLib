@@ -611,6 +611,93 @@ void free_puffernet(PufferNet* net) {
 
 #include ENV_HEADER
 
+#define PUF_HIST 100
+
+typedef struct {
+    Env frames[PUF_HIST];
+    obs_t* observations;
+    float* actions;
+    float* rewards;
+    float* terminals;
+    unsigned char* masks;
+    int num_agents;
+    int act_n;
+    int n;
+    int live;
+    int back;
+} PufHist;
+
+static int puf_hist_index(const PufHist* h, int back) {
+    return (h->live - back + PUF_HIST) % PUF_HIST;
+}
+
+static PufHist* puf_hist_alloc(int num_agents, int act_n) {
+    PufHist* h = calloc(1, sizeof(PufHist));
+    if (!h) return NULL;
+    h->num_agents = num_agents;
+    h->act_n = act_n;
+    size_t n_obs = (size_t)num_agents * (size_t)OBS_SIZE;
+    size_t n_atn = (size_t)num_agents * (size_t)NUM_ATNS;
+    size_t n_agt = (size_t)num_agents;
+    size_t n_mask = (size_t)num_agents * (size_t)act_n;
+    h->observations = calloc(PUF_HIST * n_obs, sizeof(obs_t));
+    h->actions = calloc(PUF_HIST * n_atn, sizeof(float));
+    h->rewards = calloc(PUF_HIST * n_agt, sizeof(float));
+    h->terminals = calloc(PUF_HIST * n_agt, sizeof(float));
+    h->masks = calloc(PUF_HIST * n_mask, 1);
+    if (!h->observations || !h->actions || !h->rewards || !h->terminals ||
+            (n_mask > 0 && !h->masks)) {
+        free(h->observations);
+        free(h->actions);
+        free(h->rewards);
+        free(h->terminals);
+        free(h->masks);
+        free(h);
+        return NULL;
+    }
+    return h;
+}
+
+static void puf_hist_free(PufHist* h) {
+    if (!h) return;
+    free(h->observations);
+    free(h->actions);
+    free(h->rewards);
+    free(h->terminals);
+    free(h->masks);
+    free(h);
+}
+
+static void puf_hist_push(PufHist* h, const Env* env) {
+    h->live = (h->n == 0) ? 0 : (h->live + 1) % PUF_HIST;
+    if (h->n < PUF_HIST) h->n++;
+    int s = h->live;
+    h->frames[s] = *env;
+    for (int i = 0; i < h->num_agents; i++) {
+        const Agent* src = &env->agents[i];
+        Agent* dst = &h->frames[s].agents[i];
+        dst->policy = src->policy;
+        dst->observations = h->observations +
+            ((size_t)s * (size_t)h->num_agents + (size_t)i) * (size_t)OBS_SIZE;
+        dst->actions = h->actions +
+            ((size_t)s * (size_t)h->num_agents + (size_t)i) * (size_t)NUM_ATNS;
+        dst->rewards = h->rewards + (size_t)s * (size_t)h->num_agents + (size_t)i;
+        dst->terminals = h->terminals + (size_t)s * (size_t)h->num_agents + (size_t)i;
+        memcpy(dst->observations, src->observations, (size_t)OBS_SIZE * sizeof(obs_t));
+        memcpy(dst->actions, src->actions, (size_t)NUM_ATNS * sizeof(float));
+        memcpy(dst->rewards, src->rewards, sizeof(float));
+        memcpy(dst->terminals, src->terminals, sizeof(float));
+        if (src->action_mask && h->act_n > 0) {
+            dst->action_mask = h->masks +
+                ((size_t)s * (size_t)h->num_agents + (size_t)i) * (size_t)h->act_n;
+            memcpy(dst->action_mask, src->action_mask, (size_t)h->act_n);
+        } else {
+            dst->action_mask = NULL;
+        }
+    }
+    h->back = 0;
+}
+
 #if !defined(PUF_NMMO3_NET) && !defined(PUF_ASTEROIDS_NET) && !defined(PUF_MINIMAL_NET) && !defined(PUF_CRAFTAX_NET)
 static int puf_align8(int n) {
     return (n + 7) & ~7;
@@ -861,11 +948,19 @@ int main(int argc, char** argv) {
     int sim_tick_cap = 5;
     int hold = 0;
     int steps = 0;
+    int manual_stepping = 0;
+    PufHist* hist = NULL;
+    if (!headless) {
+        hist = puf_hist_alloc(env.num_agents, act_n);
+    }
 #ifndef PLATFORM_WEB
     if (!headless) {
         SetTargetFPS(60);
     }
 #endif
+    if (hist) {
+        puf_hist_push(hist, &env);
+    }
     if (!headless) {
         puf_render(&env);
     }
@@ -876,7 +971,31 @@ int main(int argc, char** argv) {
                                  : (steps < 1024))
             : IsWindowReady()) {
         int ticks = 1;
-        if (!headless) {
+        int step_now = 0;
+
+        if (IsKeyPressed(KEY_M)) {
+            manual_stepping = 1 - manual_stepping;
+            ticks = 1;
+            sim_prev = -1.0;
+            sim_accum = 0.0;
+            if (!manual_stepping && hist) {
+                hist->back = 0;
+            }
+        }
+
+        if (manual_stepping) {
+            if (IsKeyPressed(KEY_LEFT)) {
+                if (hist && hist->back < hist->n - 1) {
+                    hist->back++;
+                }
+            } else if (IsKeyPressed(KEY_RIGHT)) {
+                if (hist && hist->back > 0) {
+                    hist->back--;
+                } else {
+                    step_now = 1;
+                }
+            }
+        } else if (!headless) {
             double now = GetTime();
             ticks = 0;
             if (sim_prev >= 0.0) {
@@ -895,7 +1014,15 @@ int main(int argc, char** argv) {
                 ticks = 1;
             }
             sim_prev = now;
+            step_now = 1;
+            if (hist) {
+                hist->back = 0;
+            }
+        } else {
+            step_now = 1;
         }
+
+        if (step_now) {
         for (int t = 0; t < ticks; t++) {
 #ifdef PUF_EVAL_SHOULD_FORWARD
             int eval_fwd = env.tick_frames_left <= 0;
@@ -926,6 +1053,9 @@ int main(int argc, char** argv) {
 #endif
             }
             puf_step(&env);
+            if (hist) {
+                puf_hist_push(hist, &env);
+            }
             if (headless) {
                 steps++;
             }
@@ -939,8 +1069,13 @@ int main(int argc, char** argv) {
                 hold = reset_hold ? 0 : (hold + 1) % frameskip;
             }
         }
+        }
         if (!headless) {
-            puf_render(&env);
+            if (hist && hist->back > 0) {
+                puf_render(&hist->frames[puf_hist_index(hist, hist->back)]);
+            } else {
+                puf_render(&env);
+            }
 #ifndef PLATFORM_WEB
             if (WindowShouldClose()) {
                 break;
@@ -978,6 +1113,7 @@ int main(int argc, char** argv) {
 
     puf_close(&env);
     puf_ini_free(&ini);
+    puf_hist_free(hist);
     return 0;
 }
 

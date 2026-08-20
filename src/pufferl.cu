@@ -1083,7 +1083,6 @@ static void env_setup(PuffeRL* p, VecEnv* vec, Dict* vk, Dict* ek) {
                 a->action_mask = vec->action_mask + (size_t)phys * vec->mask_size;
             }
             eptr->tag = tag;
-            eptr->boundary_reached = 0;
         }
         free(cursors);
         free(counts);
