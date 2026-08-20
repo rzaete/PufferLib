@@ -197,3 +197,5 @@ resources/trailer/shots/*.mp4
 .refactor-snapshots/
 
 vendor/fast-nle/
+*.rcl
+puffer

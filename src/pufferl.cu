@@ -974,8 +974,10 @@ static Env* puf_vec_create(int, Dict*, obs_t*, float*, float*, float*) {
 static void env_setup(PuffeRL* p, VecEnv* vec, Dict* vk, Dict* ek) {
     if (PUF_BACKEND == PUF_GPU) {
         assert(vec->buffers == 1 && "GPU env: num_buffers must be 1");
-        vec->size = vec->total_agents;
-        vec->envs = puf_vec_create(vec->total_agents, ek,
+        assert(vec->total_agents % PUF_AGENTS_PER_ENV == 0
+            && "GPU env: total_agents must be a multiple of agents per env");
+        vec->size = vec->total_agents / PUF_AGENTS_PER_ENV;
+        vec->envs = puf_vec_create(vec->size, ek,
             p->env.obs.data, p->env.actions.data,
             p->env.rewards.data, p->env.terminals.data);
         cudaMalloc((void**)&vec->log_scratch, sizeof(Log));

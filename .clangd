@@ -1,0 +1,152 @@
+# Flags follow build.sh native/cpu. Absolute -I: clangd has no compilation
+# database here, so relative -I would be resolved from each source file's
+# directory rather than the repo root.
+CompileFlags:
+  Compiler: clang-22
+  Add:
+    - -ferror-limit=0
+    - -Wall
+    - -Wno-narrowing
+    - -Werror=incompatible-pointer-types
+    - -Werror=return-type
+    - -Wno-error=incompatible-pointer-types-discards-qualifiers
+    - -Wno-incompatible-pointer-types-discards-qualifiers
+    - -Wno-error=array-parameter
+    - -DPLATFORM_DESKTOP
+    - -mavx2
+    - -mfma
+    - -fopenmp
+    - -I/home/babaeti2/PufferLib
+    - -I/home/babaeti2/PufferLib/src
+    - -I/home/babaeti2/PufferLib/vendor
+    - -I/home/babaeti2/PufferLib/raylib-5.5_linux_amd64/include
+  Remove:
+    - -xobjective-c++-header
+    - -xobjective-c-header
+    - -xobjective-c++
+    - -xobjective-c
+
+Diagnostics:
+  UnusedIncludes: None
+  MissingIncludes: None
+
+Completion:
+  HeaderInsertion: Never
+
+---
+If:
+  PathMatch: .*\.c
+CompileFlags:
+  Add: [-xc]
+  Remove: [-xc++, -xc++-header, -xcuda, -std=c++*]
+
+---
+If:
+  PathMatch: .*\.h
+  PathExclude: ocean/robot_arm/.*
+CompileFlags:
+  Add: [-xc-header]
+  Remove: [-xc++, -xc++-header, -xcuda, -std=c++*]
+
+---
+# clang 22 parses CUDA 13.2 as -xcuda (capped at 12.9; best-effort).
+# --cuda-host-only: kernels and blockIdx parse; skip a slow device codegen pass.
+# gcc 16 has no libstdc++ headers on this machine; pin gcc 15.
+# libomp-22-dev is not installed; omp.h is in clang 21's resource dir.
+If:
+  PathMatch: [.*\.cu, .*\.cuh, ocean/robot_arm/.*]
+CompileFlags:
+  Compiler: clang++-22
+  Remove: [-xc, -xc-header, -xc++]
+  Add:
+    - -xcuda
+    - -std=c++17
+    - --cuda-path=/usr/local/cuda
+    - --cuda-gpu-arch=sm_89
+    - --cuda-host-only
+    - --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/15
+    - -Wno-unknown-cuda-version
+    - -Wno-c++11-narrowing
+    - -I/usr/local/cuda/include
+    - -I/usr/local/cuda/include/cccl
+    - -idirafter
+    - /usr/lib/llvm-21/lib/clang/21/include
+
+---
+# Env headers typedef obs_t immediately before this include. Standalone parse
+# needs a stand-in.
+If:
+  PathMatch: src/pufferenv\.h
+CompileFlags:
+  Add: [-Dobs_t=float]
+
+---
+# pufferl.cu #includes ENV_HEADER. build.sh sets this to one env per binary;
+# template is the generic stand-in so the trainer TU is parseable.
+If:
+  PathMatch: [src/pufferl\.cu, tests/profile_kernels\.cu, tests/test_nethack_cuda\.cu]
+CompileFlags:
+  Add:
+    - '-DENV_HEADER="ocean/template/template.h"'
+    - -DENV_NAME=template
+    - '-DPUFFER_ENV_NAME="template"'
+    - -DPUFFERLIB_BUILD_MAIN
+
+---
+# Included by pufferl.cu, not standalone TUs. Force-include the trainer so
+# Allocator/Prec/Float exist; clang has no -xcuda-header, so the file is still
+# parsed again afterwards (redefinition). Drop those diagnostics.
+If:
+  PathMatch: [src/algo\.cu, src/ocean\.cu, src/protein\.cu]
+CompileFlags:
+  Add:
+    - '-DENV_HEADER="ocean/template/template.h"'
+    - -DENV_NAME=template
+    - '-DPUFFER_ENV_NAME="template"'
+    - -DPUFFERLIB_BUILD_MAIN
+    - -include
+    - /home/babaeti2/PufferLib/src/pufferl.cu
+Diagnostics:
+  Suppress:
+    - redefinition
+    - redefinition_different_typedef
+    - redefinition_different_keyword
+    - unknown_typename
+    - unknown_typename_suggest
+    - fatal_too_many_errors
+    - ovl_no_viable_function_in_call
+
+---
+If:
+  PathMatch: ocean/impulse_wars/.*
+CompileFlags:
+  Add:
+    - -I/home/babaeti2/PufferLib/ocean/impulse_wars
+    - -I/home/babaeti2/PufferLib/vendor/collections-c
+    - -I/home/babaeti2/PufferLib/box2d-linux-amd64/include
+    - -I/home/babaeti2/PufferLib/box2d-linux-amd64/src
+
+---
+If:
+  PathMatch: ocean/nethack/.*
+CompileFlags:
+  Add:
+    - -DPUFFER_NETHACK
+    - -I/home/babaeti2/PufferLib/vendor/fast-nle/include
+    - -I/home/babaeti2/PufferLib/vendor/fast-nle/build/_deps/deboost_context-src/include
+
+---
+If:
+  PathMatch: [ocean/rcssemptynet_old/.*, ocean/rcsscommon/.*]
+CompileFlags:
+  Add:
+    - -I/home/babaeti2/rcssserver_v3
+    - -I/home/babaeti2/rcssserver_v3/src
+    - -I/home/babaeti2/rcssserver_v3/rcss
+    - -I/home/babaeti2/PufferLib/ocean/rcsscommon
+---
+If:
+  PathMatch: [ocean/rcssemptynet/.*, ocean/rcssfull/.*]
+CompileFlags:
+  Add:
+    - -I/home/babaeti2/PufferLib/ocean/rcsscommon

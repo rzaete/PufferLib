@@ -37,6 +37,9 @@ typedef struct Agent {
 #ifndef PUF_BACKEND
 #define PUF_BACKEND PUF_CPU
 #endif
+#ifndef PUF_AGENTS_PER_ENV
+#define PUF_AGENTS_PER_ENV 1
+#endif
 
 // Shared env API. CPU: per-env Env*. GPU: Env* is device batch base; step/reset
 // run the full vector inside the env. puf_bind_stream / puf_vec_create are GPU

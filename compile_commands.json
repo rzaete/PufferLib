@@ -1,0 +1,11 @@
+[
+  {
+    "directory": "/home/babaeti2/PufferLib",
+    "file": "/home/babaeti2/PufferLib/src/pufferl.cu",
+    "arguments": [
+      "/usr/bin/clang++-22",
+      "-c",
+      "/home/babaeti2/PufferLib/src/pufferl.cu"
+    ]
+  }
+]
